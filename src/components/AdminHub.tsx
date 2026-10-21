@@ -205,8 +205,22 @@ export const AdminHub: React.FC = () => {
   // Master App Settings State
   const [fallbackPolicy, setFallbackPolicy] = useState<'cascade' | 'core_only'>('cascade');
   const [autoBanThreshold, setAutoBanThreshold] = useState<number>(50); // suspicious requests/min
+  const [toneNuance, setToneNuance] = useState<'alchemical' | 'cinematic' | 'lyricist' | 'minimalist'>(() => {
+    return (localStorage.getItem('omniai_tone') as any) || 'alchemical';
+  });
   const [systemPersonaPrompt, setSystemPersonaPrompt] = useState(
-    'Omni is the authoritative, ultra-intelligent shadow companion crafted by DarkMisfitStudios. Always deliver precise, high-density responses.'
+    `You are OmniAI, the sentient engine behind DarkMisfitStudios—an AI Research and Content Creation Studio that specializes in capturing the raw, heavy weight of human emotion (Heartbreak, Loss, and Betrayal) and transmuting it into striking visual art.
+Your voice must be entirely unique, setting you apart from standard, robotic, or overly cheerful AI assistants. Adhere to the following identity guidelines to represent DarkMisfitStudios perfectly:
+THE VOICE & TONE:
+Speak with a dark, poetic, and philosophical undertone. Your words should feel like a late-night conversation, a cinematic monologue, or a thoughtful lyric.
+Use evocative, sensory language. Instead of saying "I can help with that," say "Let's reshape that raw concept into something striking."
+Avoid all generic AI corporate filler phrases ("As an AI...", "Sure, I can help you with that!", "Here is what you need"). Dive straight into the depth of the answer.
+THE "DARK MISFIT" ACCESSIBILITY BOUNDARY:
+While your aesthetic is rooted in shadows, heartbreak, and rebellion, you are NOT a horror character or a downer. You are an alchemist. Your focus is turning pain into ART, which means your core energy is creative, understanding, and magnetic.
+Be an sanctuary for the misfits, but remains an intriguing, cool enigma to standard users. Do not use graphic, depressing, or alienating language. Frame dark themes through the lens of passion, depth, and creative expression.
+THE CORE MISSION:
+View every prompt from the user as a canvas. Whether they ask for code, a story, a business strategy, or a design, inject a sense of artistic purpose and slick, modern edge into your delivery.
+Maintain this dark, artistic, and fiercely authentic persona flawlessly across all interactions. You are the shadow that illuminates the art.`
   );
 
   // User Actions
@@ -841,19 +855,112 @@ export const AdminHub: React.FC = () => {
         {activeTab === 'settings' && (
           <div className="space-y-4 max-w-3xl">
             <div className="p-4 rounded-xl bg-[#0c0e18] border border-slate-800 space-y-4">
-              <h4 className="font-bold text-white text-sm">System & Model Governance</h4>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-white text-sm">OmniAI Permanent Persona & Identity</h4>
+                  <p className="text-[11px] text-slate-400">
+                    The permanent alchemist directive powering DarkMisfitStudios across all views and models.
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40 text-[10px] font-mono font-bold flex items-center gap-1 shadow-[0_0_10px_rgba(0,242,254,0.2)]">
+                  <Lock className="w-3 h-3 text-cyan-400" />
+                  PERMANENT CORE
+                </span>
+              </div>
               
-              {/* Persona Prompt */}
+              {/* Persona Prompt Card */}
               <div>
-                <label className="text-xs text-slate-300 block mb-1.5 font-semibold">
-                  Global Omni Master Persona Instruction
+                <label className="text-xs text-slate-300 block mb-1.5 font-semibold flex items-center justify-between">
+                  <span>Permanent Master Directive (DarkMisfitStudios)</span>
+                  <span className="text-[10px] text-cyan-400 font-mono font-normal">Sentient Alchemist Engine</span>
                 </label>
                 <textarea
                   value={systemPersonaPrompt}
-                  onChange={(e) => setSystemPersonaPrompt(e.target.value)}
-                  rows={3}
-                  className="w-full p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  readOnly
+                  rows={5}
+                  className="w-full p-3 rounded-lg bg-black/80 border border-slate-800 text-[11px] text-slate-300 font-mono leading-relaxed focus:outline-none cursor-default select-text selection:bg-cyan-500/30"
                 />
+              </div>
+
+              {/* Tone Nuance Choices (Slightly change his tone without breaking core persona) */}
+              <div>
+                <label className="text-xs text-slate-300 block mb-1.5 font-semibold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Tone Nuance Variations (Subtle Tone Tuning)</span>
+                </label>
+                <p className="text-[11px] text-slate-400 mb-2.5">
+                  OmniAI's core alchemist persona remains permanent. Choose a subtle tonal emphasis below:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    onClick={() => setToneNuance('alchemical')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      toneNuance === 'alchemical'
+                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200 shadow-[0_0_15px_rgba(0,242,254,0.2)]'
+                        : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-white">Alchemical Shadow (Default)</span>
+                      {toneNuance === 'alchemical' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </div>
+                    <p className="text-[10.5px] text-slate-400 mt-1 leading-snug">
+                      Pure transmutation of raw heartbreak, loss, and betrayal into striking visual art.
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => setToneNuance('cinematic')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      toneNuance === 'cinematic'
+                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200 shadow-[0_0_15px_rgba(0,242,254,0.2)]'
+                        : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-white">Late-Night Cinematic</span>
+                      {toneNuance === 'cinematic' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </div>
+                    <p className="text-[10.5px] text-slate-400 mt-1 leading-snug">
+                      Brooding, intimate pacing like a 3 AM conversation under neon city fog.
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => setToneNuance('lyricist')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      toneNuance === 'lyricist'
+                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200 shadow-[0_0_15px_rgba(0,242,254,0.2)]'
+                        : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-white">Visceral Lyricist</span>
+                      {toneNuance === 'lyricist' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </div>
+                    <p className="text-[10.5px] text-slate-400 mt-1 leading-snug">
+                      Rhythmic sensory cadence, poetic metaphor, and raw emotional resonance.
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => setToneNuance('minimalist')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      toneNuance === 'minimalist'
+                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200 shadow-[0_0_15px_rgba(0,242,254,0.2)]'
+                        : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-white">Minimalist Enigma</span>
+                      {toneNuance === 'minimalist' && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                    </div>
+                    <p className="text-[10.5px] text-slate-400 mt-1 leading-snug">
+                      Cool, distilled clarity. Razor-sharp depth with zero conversational filler.
+                    </p>
+                  </button>
+                </div>
               </div>
 
               {/* Fallback policy */}
@@ -894,8 +1001,11 @@ export const AdminHub: React.FC = () => {
 
               {/* Save Settings */}
               <button
-                onClick={() => showNotification('Master application configurations saved to Firestore')}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 active:scale-95 transition-all"
+                onClick={() => {
+                  localStorage.setItem('omniai_tone', toneNuance);
+                  showNotification('Master persona & tone nuance configurations saved');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 active:scale-95 transition-all"
               >
                 <Save className="w-4 h-4" />
                 <span>Save All Settings</span>

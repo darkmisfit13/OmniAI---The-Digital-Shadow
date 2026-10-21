@@ -212,7 +212,7 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
           body: JSON.stringify({
             message: userText,
             imageBase64: currentAttachment?.dataUrl,
-            tone: 'nocturnal',
+            tone: localStorage.getItem('omniai_tone') || 'alchemical',
           }),
         });
 

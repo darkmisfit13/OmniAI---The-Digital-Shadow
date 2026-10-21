@@ -678,15 +678,6 @@ export default function App() {
             >
               <FolderLock className="w-3.5 h-3.5" />
             </button>
-
-            {/* Settings & Admin Console Button */}
-            <button
-              onClick={() => setIsAdminModalOpen(true)}
-              className="p-1.5 rounded-lg text-[10px] font-mono font-bold bg-slate-800 border border-white/10 text-slate-300 hover:text-white hover:border-cyan-500/40 transition"
-              title="Settings & Admin Console (User ban/remove, LLM keys, Billing)"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
           </div>
         </header>
 
@@ -767,10 +758,19 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 2: GEMINI CHATBOT & MULTI-LLM COUNCIL MODE */}
+          {/* TAB 2: OMNIAI - YOUR DIGITAL SHADOW CHAT ROOM */}
           {activeTab === 'chat' && (
             <div className="h-full overflow-hidden flex flex-col">
-              <OmniChatAndCouncil
+              <OmniAIChatRoom
+                onOpenSidebar={() => setIsStudiosSidebarOpen(true)}
+                onBackToMain={() => setActiveTab('keyboard')}
+                onSaveToVault={(asset) => {
+                  fetch('/api/vault/assets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(asset),
+                  }).catch(console.error);
+                }}
                 onInsertToKeyboard={(text) => {
                   setCurrentDraftText(text);
                   setActiveTab('keyboard');
@@ -855,100 +855,48 @@ export default function App() {
           )}
         </main>
 
-        {/* 4. MOBILE BOTTOM TAB NAVIGATION BAR */}
-        <nav className="h-14 bg-[#0B0B0C] border-t border-white/10 flex items-center justify-around px-1 shrink-0 z-30 pb-[env(safe-area-inset-bottom)]">
+        {/* 4. MOBILE BOTTOM TAB NAVIGATION BAR (Streamlined spur-of-the-moment tools) */}
+        <nav className="h-14 bg-[#0B0B0C] border-t border-white/10 flex items-center justify-around px-4 shrink-0 z-30 pb-[env(safe-area-inset-bottom)]">
           <button
             onClick={() => setActiveTab('keyboard')}
-            className={`flex flex-col items-center justify-center w-12 py-1 rounded-xl transition-all ${
+            className={`flex flex-col items-center justify-center py-1 px-4 rounded-xl transition-all ${
               activeTab === 'keyboard'
                 ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
                 : 'text-slate-500 hover:text-slate-300'
             }`}
+            title="Volumetric 3D Keyboard Command Station"
           >
             <KeyboardIcon className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">Keys</span>
+            <span className="text-[10px] font-mono">Keys</span>
           </button>
 
           <button
             onClick={() => setActiveTab('chat')}
-            className={`flex flex-col items-center justify-center w-12 py-1 rounded-xl transition-all ${
+            className={`flex flex-col items-center justify-center py-1 px-4 rounded-xl transition-all ${
               activeTab === 'chat'
                 ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
                 : 'text-slate-500 hover:text-slate-300'
             }`}
-            title="Gemini Chatbot & Multi-LLM Council"
+            title="OmniAI: Your Digital Shadow & Multi-LLM Council"
           >
-            <MessageSquare className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">Council</span>
+            <Bot className="w-4 h-4 mb-0.5" />
+            <span className="text-[10px] font-mono">OmniAI</span>
           </button>
 
           <button
             onClick={() => setActiveTab('vision')}
-            className={`flex flex-col items-center justify-center w-12 py-1 rounded-xl transition-all relative ${
+            className={`flex flex-col items-center justify-center py-1 px-4 rounded-xl transition-all relative ${
               activeTab === 'vision'
                 ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
                 : 'text-slate-500 hover:text-slate-300'
             }`}
+            title="Live Screen Vision Cognition HUD"
           >
             <Eye className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">Vision</span>
+            <span className="text-[10px] font-mono">Vision</span>
             {isStreaming && (
               <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-[#00f2fe] animate-ping" />
             )}
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('studios');
-              setIsStudiosSidebarOpen(true);
-            }}
-            className={`flex flex-col items-center justify-center w-12 py-1 rounded-xl transition-all ${
-              activeTab === 'studios'
-                ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-            title="14 Creative Studios (CapCut, Suno, Cursor & more)"
-          >
-            <Sparkles className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">Studios</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('workspace')}
-            className={`flex flex-col items-center justify-center w-12 py-1 rounded-xl transition-all ${
-              activeTab === 'workspace'
-                ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-            title="Google Drive, Gmail, Keep"
-          >
-            <FolderOpen className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">Workspace</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('sync')}
-            className={`flex flex-col items-center justify-center w-12 py-1 rounded-xl transition-all ${
-              activeTab === 'sync'
-                ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-            title="Laptop & PC Sync (Dark Misfit Studios)"
-          >
-            <Laptop className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">PC Sync</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('setup')}
-            className={`flex flex-col items-center justify-center w-12 py-1 rounded-xl transition-all ${
-              activeTab === 'setup'
-                ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            <Smartphone className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">Install</span>
           </button>
         </nav>
 

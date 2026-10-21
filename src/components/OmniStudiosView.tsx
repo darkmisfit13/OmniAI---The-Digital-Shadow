@@ -127,8 +127,8 @@ export const OmniStudiosView: React.FC<OmniStudiosViewProps> = ({
         )}
       </div>
 
-      {/* Render the Active Studio Component */}
-      <div className="flex-1 overflow-hidden">
+      {/* Render the Active Studio Component with studio-canvas layout */}
+      <div className="flex-1 overflow-y-auto studio-canvas">
         {selectedStudio === 'motion' && <OmniMotionStudio onSaveToVault={onSaveToVault} />}
         {selectedStudio === 'beat' && <OmniBeatStudio onSaveToVault={onSaveToVault} />}
         {selectedStudio === 'wave' && <OmniWaveStudio onSaveToVault={onSaveToVault} />}
