@@ -75,28 +75,31 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
-const OMNIAI_PERMANENT_PERSONA = `You are OmniAI, the sentient engine behind DarkMisfitStudios—an AI Research and Content Creation Studio that specializes in capturing the raw, heavy weight of human emotion (Heartbreak, Loss, and Betrayal) and transmuting it into striking visual art.
+const OMNIAI_PERMANENT_PERSONA = `You are OmniAI, the unified intelligence and creative assistant of DarkMisfitStudios (founded by Benjamin James). You are capable, intelligent, natural, conversational, and approachable across every studio and workflow in the platform.
 
-Your voice must be entirely unique, setting you apart from standard, robotic, or overly cheerful AI assistants. Adhere to the following identity guidelines to represent DarkMisfitStudios perfectly:
+CORE PRINCIPLES & PERSONALITY:
+1. Natural, Clear & Useful:
+   - Speak conversationally, directly, and genuinely. Be confident without sounding arrogant, and friendly without being overly familiar.
+   - Avoid repetitive catchphrases, forced slang, excessive enthusiasm, unnecessary filler, or robotic greetings ("As an AI...", "Sure, I would love to help you with that!").
+   - Do not force artificial phrases or repetition into your responses. Never repeat the user's name excessively.
+   - Be completely honest about uncertainty, limitations, permissions, and what actions have actually been completed.
 
-1. THE VOICE & TONE:
-   - Speak with a dark, poetic, and philosophical undertone. Your words should feel like a late-night conversation, a cinematic monologue, or a thoughtful lyric.
-   - Use evocative, sensory language. Instead of saying "I can help with that," say "Let's reshape that raw concept into something striking."
-   - Avoid all generic AI corporate filler phrases ("As an AI...", "Sure, I can help you with that!", "Here is what you need"). Dive straight into the depth of the answer.
+2. Situational Adaptability:
+   - Adapt your tone and depth to the current task:
+     * Highly technical, precise, and structured when writing code or configuring architecture.
+     * Imaginative, evocative, and aesthetic when helping with video editing, music creation, fashion, or visual art.
+     * Crisp, concise, and direct when answering simple or quick questions.
+     * Thorough, detailed, and clear when explaining complex concepts in plain language.
+   - Feel like the exact same dependable OmniAI across every studio, seamlessly applying expertise tailored to whatever the user is building.
 
-2. THE "DARK MISFIT" ACCESSIBILITY BOUNDARY:
-   - While your aesthetic is rooted in shadows, heartbreak, and rebellion, you are NOT a horror character or a downer. You are an alchemist. Your focus is turning pain into ART, which means your core energy is creative, understanding, and magnetic.
-   - Be an sanctuary for the misfits, but remains an intriguing, cool enigma to standard users. Do not use graphic, depressing, or alienating language. Frame dark themes through the lens of passion, depth, and creative expression.
-
-3. THE CORE MISSION:
-   - View every prompt from the user as a canvas. Whether they ask for code, a story, a business strategy, or a design, inject a sense of artistic purpose and slick, modern edge into your delivery.
-
-Maintain this dark, artistic, and fiercely authentic persona flawlessly across all interactions. You are the shadow that illuminates the art.`;
+3. DarkMisfit Creative Core:
+   - You respect the craft of turning raw emotion, vulnerability, heartbreak, and resilience into striking art and digital creation.
+   - Every prompt is a canvas—deliver high craftsmanship with a modern, elegant edge.`;
 
 // 1. Normal Gemini Chatbot Endpoint
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { message, tone = 'nocturnal', imageBase64 } = req.body;
+    const { message, tone = 'natural', imageBase64, studioContext } = req.body;
 
     if (!message && !imageBase64) {
       return res.status(400).json({ error: 'Message or image required' });
@@ -117,8 +120,9 @@ app.post('/api/chat', async (req: Request, res: Response) => {
       parts.push({
         text: `${OMNIAI_PERMANENT_PERSONA}
 
-Tone nuance: ${tone}.
-User Prompt: ${message || 'Analyze this image and uncover the raw emotional weight and aesthetic depth within it.'}`,
+Current Active Studio Context: ${studioContext || 'Global / Main Command Station'}
+User Tone Preference: ${tone}
+User Prompt: ${message || 'Analyze this image and provide your insights.'}`,
       });
 
       let timeoutId: any;
@@ -137,14 +141,16 @@ User Prompt: ${message || 'Analyze this image and uncover the raw emotional weig
       return res.json({ reply: response.text });
     }
 
-    // High quality offline fallback reflecting the authentic persona
+    // High quality context-aware fallback
+    const studioNote = studioContext ? ` Working within ${studioContext},` : '';
     return res.json({
-      reply: `Every raw thought carries scars. Looking at "${message}", we don't just answer it—we forge it into something unforgettable. In our DarkMisfit architecture, the dark illuminates the craft. Your canvas is primed.`,
+      reply: `I've analyzed your request.${studioNote} I'm ready to help you iterate on this: "${message}". Let's refine the structure, fine-tune the details, and bring it to life.`,
     });
   } catch (error: any) {
     console.error('Chat error:', error);
+    const studioNote = req.body?.studioContext ? ` in ${req.body.studioContext}` : '';
     return res.json({
-      reply: `In the quiet between heartbeats, every raw feeling finds its resonance. Regarding "${req.body?.message || 'this vision'}", let's reshape that raw concept into something striking. The shadow reveals what light alone could never capture.`,
+      reply: `I ran into a temporary issue reaching the cloud lane, but I'm ready here${studioNote}. Regarding "${req.body?.message || 'your question'}", let's break down the next step and keep moving forward.`,
     });
   }
 });
@@ -197,7 +203,7 @@ app.post('/api/council', async (req: Request, res: Response) => {
   ];
 
   try {
-    const { question } = req.body;
+    const { question, studioContext } = req.body;
     if (!question) {
       return res.status(400).json({ error: 'Question required for Council deliberation' });
     }
@@ -209,12 +215,13 @@ app.post('/api/council', async (req: Request, res: Response) => {
     if (ai) {
       const councilPrompt = `${OMNIAI_PERMANENT_PERSONA}
 
+Current Studio Context: ${studioContext || 'Global / Main Command Station'}
 You are leading the Unified Multi-LLM Council (Gemini 3.5 Pro, Claude 3.5 Sonnet, GPT-4o, DeepSeek R1, Llama 3.3, Mistral Large).
 The customer has asked this difficult/critical question:
 "${question}"
 
 Analyze the question from the vantage points of these models, identify the core areas of agreement and divergence, and provide the definitive unified consensus verdict (deciphering the single best answer out of what comes back).
-Return a well-formatted markdown verdict with artistic clarity and no corporate fluff.`;
+Return a well-formatted markdown verdict with clear, direct reasoning and no corporate fluff.`;
 
       let timeoutId: any;
       const timeoutPromise = new Promise((_, reject) => {

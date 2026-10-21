@@ -28,7 +28,7 @@ import { AIKeyboardBar } from './components/AIKeyboardBar';
 import { SoftKeyboard } from './components/SoftKeyboard';
 import { SimulatedAppView, PRESET_SCENARIOS, ScreenScenario } from './components/SimulatedAppView';
 import { ScreenVisionHUD } from './components/ScreenVisionHUD';
-import { OmniStudiosView, StudioId } from './components/OmniStudiosView';
+import { OmniStudiosView, StudioId, studioMeta } from './components/OmniStudiosView';
 import { OmniStudiosSidebar } from './components/OmniStudiosSidebar';
 import { OmniAIChatRoom } from './components/OmniAIChatRoom';
 import { OmniChatAndCouncil } from './components/OmniChatAndCouncil';
@@ -45,6 +45,8 @@ import { JarvisTelemetryHUD } from './components/JarvisTelemetryHUD';
 import { onDeviceAI, DualLaneAnalysisResult } from './lib/onDeviceAI';
 import { auth, testFirestoreConnection } from './lib/firebase';
 import { User } from 'firebase/auth';
+import { GlobalAssistantDrawer } from './components/GlobalAssistantDrawer';
+import { assistantService } from './lib/assistantService';
 import { omniVoice } from './lib/omniVoice';
 
 export default function App() {
@@ -184,7 +186,7 @@ export default function App() {
   }, []);
 
   const triggerTypingState = useCallback(() => {
-    setOrbPhase('texting');
+    setOrbPhase('typing');
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       setOrbPhase('idle');
@@ -527,6 +529,67 @@ export default function App() {
     ? 'Uploaded Screen Image'
     : currentScenario.name;
 
+  // Global OmniAI Assistant Drawer State
+  const [isGlobalAssistantOpen, setIsGlobalAssistantOpen] = useState(false);
+
+  // Synchronize Living HoloOrb with Centralized Assistant State Model
+  useEffect(() => {
+    const unsubAssistant = assistantService.subscribePhase((p) => {
+      setOrbPhase(p);
+    });
+    return unsubAssistant;
+  }, []);
+
+  // Compute active studio human-readable name & keep assistant in sync
+  const getActiveStudioName = (): string => {
+    if (activeTab === 'studios' && selectedStudio) {
+      const meta = studioMeta[selectedStudio];
+      return meta ? `${meta.name} — ${meta.tag}` : 'Creative Studios';
+    }
+    if (activeTab === 'keyboard') return 'Main Keyboard Station';
+    if (activeTab === 'chat') return 'OmniAI Dedicated Chat Room';
+    if (activeTab === 'vision') return 'Screen Vision HUD';
+    if (activeTab === 'workspace') return 'Workspace Hub';
+    if (activeTab === 'sync') return 'Desktop PC Sync';
+    return 'OmniAI Platform';
+  };
+
+  const currentStudioFullName = getActiveStudioName();
+
+  // Dedicated Chat Workspace Navigation Tracking
+  const [previousNav, setPreviousNav] = useState<{ tab: typeof activeTab; studio: StudioId | null }>({
+    tab: 'keyboard',
+    studio: null,
+  });
+  const chatComposerRef = useRef<any>(null);
+
+  const navigateToDedicatedChat = useCallback(() => {
+    setPreviousNav({
+      tab: activeTab,
+      studio: activeTab === 'studios' ? selectedStudio : null,
+    });
+    setActiveTab('chat');
+  }, [activeTab, selectedStudio]);
+
+  const handleReturnFromChat = useCallback(() => {
+    setActiveTab(previousNav.tab);
+    if (previousNav.studio) {
+      setSelectedStudio(previousNav.studio);
+    }
+  }, [previousNav]);
+
+  const previousDestinationLabel = previousNav.tab === 'studios' && previousNav.studio
+    ? studioMeta[previousNav.studio]?.name || 'Studio'
+    : previousNav.tab === 'keyboard'
+    ? 'Keys'
+    : previousNav.tab === 'vision'
+    ? 'Vision'
+    : 'Home';
+
+  useEffect(() => {
+    assistantService.setStudioContext(currentStudioFullName);
+  }, [activeTab, selectedStudio, currentStudioFullName]);
+
   return (
     <div className="min-h-screen bg-[#000000] text-slate-100 flex flex-col items-center justify-center p-0 sm:p-4 select-none">
       <OfflineIndicator />
@@ -595,28 +658,34 @@ export default function App() {
           </div>
         </div>
 
-        {/* 2. APP HEADER: PERMANENT TOP-LEFT STUDIOS TOGGLE & 3D HOLO ORB & DARK MISFIT STUDIOS BRANDING */}
+        {/* 2. APP HEADER: PERMANENT TOP-LEFT STUDIOS TOGGLE, PRIMARY LIVING ORB, AND TOP-RIGHT OMNIAI CHAT TOGGLE */}
         <header className="px-3 py-2 bg-[#0B0B0C] border-b border-white/10 flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center gap-2">
-            {/* Permanent top-left studio toggle button */}
+            {/* Top-Left: Clearly recognizable sidebar toggle button */}
             <button
               onClick={() => setIsStudiosSidebarOpen(true)}
-              className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-gradient-to-r from-cyan-950/70 to-indigo-950/70 border border-cyan-500/40 text-cyan-300 hover:border-cyan-400 hover:text-white transition shadow-sm active:scale-95"
-              title="Open Studios Drawer (14 Creative Engines)"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-950/80 to-indigo-950/80 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-white transition shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-[#00f2fe]"
+              title="Open Studios Drawer (14 Core + 4 Planned)"
+              aria-label="Open navigation sidebar"
             >
               <Menu className="w-4 h-4 text-[#00f2fe]" />
               <span className="text-[10px] font-mono font-bold tracking-wider hidden xs:inline">Studios</span>
             </button>
 
-            {/* Authentic Three.js 3D HoloOrb */}
+            {/* Top-Center: Authentic Three.js 3D Living HoloOrb representing OmniAI */}
             <div className="flex items-center gap-2 pl-0.5">
-              <HoloOrb phase={orbPhase} size="sm" onClick={() => analyzeActiveScreen()} />
+              <HoloOrb phase={orbPhase} size="sm" onClick={() => setIsGlobalAssistantOpen(true)} />
               <div className="flex flex-col text-left">
                 <div className="flex items-center gap-1.5 leading-none">
                   <h1 className="text-xs font-bold tracking-wider font-mono text-white">
                     Omni <span className="text-[#00f2fe]">AI</span>
                   </h1>
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#00f2fe] animate-ping" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    orbPhase === 'processing' ? 'bg-amber-400 animate-ping' :
+                    orbPhase === 'responding' ? 'bg-[#00f2fe] animate-pulse' :
+                    orbPhase === 'listening' ? 'bg-purple-400 animate-bounce' :
+                    'bg-[#00f2fe]'
+                  }`} />
                 </div>
                 <span className="text-[8.5px] font-mono tracking-wider text-slate-400 mt-0.5">
                   Dark Misfit Studios
@@ -625,8 +694,31 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Header Action Cockpit */}
-          <div className="flex items-center gap-1">
+          {/* Right Header Action Cockpit: Top-Right OmniAI Assistant Toggle */}
+          <div className="flex items-center gap-1.5">
+            {/* Top-Right Control: OmniAI Assistant Toggle / Workspace Focus */}
+            <button
+              onClick={() => {
+                if (activeTab === 'chat') {
+                  chatComposerRef.current?.focusComposer();
+                } else {
+                  setIsGlobalAssistantOpen(!isGlobalAssistantOpen);
+                }
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition shadow-sm active:scale-95 focus-visible:ring-2 focus-visible:ring-[#00f2fe] ${
+                activeTab === 'chat'
+                  ? 'bg-cyan-950/80 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(0,242,254,0.3)]'
+                  : 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-400/50 hover:border-cyan-300 text-cyan-300 hover:text-white shadow-[0_0_12px_rgba(0,242,254,0.25)]'
+              }`}
+              title={activeTab === 'chat' ? 'Dedicated Workspace Active (Click to focus composer)' : 'Open OmniAI Assistant Conversation Panel (Anywhere in App)'}
+              aria-label={activeTab === 'chat' ? 'Focus OmniAI Workspace Composer' : 'Toggle OmniAI Assistant'}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#00f2fe] animate-pulse" />
+              <span className="text-[10px] font-mono font-bold tracking-wider">
+                {activeTab === 'chat' ? 'Workspace' : 'OmniAI'}
+              </span>
+            </button>
+
             {/* Quick Voice Toggle */}
             <button
               onClick={() => {
@@ -642,32 +734,9 @@ export default function App() {
                   : 'bg-[#0B0B0C] border border-white/10 text-slate-500 hover:text-white'
               }`}
               title={isVoiceEnabled ? 'OmniVoice Active (Click to mute)' : 'OmniVoice Muted (Click to enable)'}
+              aria-label="Toggle OmniVoice"
             >
               {isVoiceEnabled ? <Volume2 className="w-3 h-3 text-[#00f2fe] animate-pulse" /> : <VolumeX className="w-3 h-3 text-slate-500" />}
-              <span className="hidden xs:inline">{isVoiceEnabled ? 'VOICE' : 'MUTE'}</span>
-            </button>
-
-            {/* Quick Auto Mode Toggle */}
-            <button
-              onClick={handleToggleAutoMode}
-              className={`flex items-center gap-1 px-1.5 py-1 rounded-lg text-[9.5px] font-mono font-bold transition ${
-                isAutoMode
-                  ? 'bg-gradient-to-r from-[#00f2fe]/20 to-[#7f00ff]/30 border border-[#00f2fe] text-[#00f2fe] shadow-[0_0_12px_rgba(0,242,254,0.4)] animate-pulse'
-                  : 'bg-[#0B0B0C] border border-white/10 text-slate-400 hover:text-white'
-              }`}
-              title="Toggle Autonomous Auto-Pilot Mode (Omni answers for you)"
-            >
-              <Zap className={`w-3 h-3 ${isAutoMode ? 'text-[#00f2fe] animate-bounce' : 'text-slate-500'}`} />
-              <span className="hidden xs:inline">{isAutoMode ? 'AUTO: ON' : 'AUTO'}</span>
-            </button>
-
-            {/* OmniCore HUD Button */}
-            <button
-              onClick={() => setIsTelemetryHUDOpen(!isTelemetryHUDOpen)}
-              className="p-1.5 rounded-lg text-[10px] font-mono font-bold bg-[#00f2fe]/10 border border-[#00f2fe]/40 text-[#00f2fe] shadow-[0_0_10px_rgba(0,242,254,0.2)] hover:bg-[#00f2fe]/20 transition"
-              title="Toggle OmniCore Telemetry HUD"
-            >
-              <Activity className="w-3.5 h-3.5" />
             </button>
 
             {/* Global Vault Drawer Button */}
@@ -675,6 +744,7 @@ export default function App() {
               onClick={() => setIsVaultOpen(true)}
               className="p-1.5 rounded-lg text-[10px] font-mono font-bold bg-purple-500/10 border border-purple-500/40 text-purple-300 hover:bg-purple-500/20 transition"
               title="Open Global Vault Media Library"
+              aria-label="Open Vault Media Library"
             >
               <FolderLock className="w-3.5 h-3.5" />
             </button>
@@ -764,7 +834,7 @@ export default function App() {
               <OmniAIChatRoom
                 onOpenSidebar={() => setIsStudiosSidebarOpen(true)}
                 onBackToMain={() => setActiveTab('keyboard')}
-                onSaveToVault={(asset) => {
+                onSaveToVault={(asset: any) => {
                   fetch('/api/vault/assets', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -786,6 +856,7 @@ export default function App() {
               onSelectStudio={(id) => setSelectedStudio(id)}
               onBackToHome={() => setActiveTab('keyboard')}
               onOpenSidebar={() => setIsStudiosSidebarOpen(true)}
+              onOpenAssistant={() => setIsGlobalAssistantOpen(true)}
               onInsertToKeyboard={(text) => {
                 setCurrentDraftText(text);
                 setActiveTab('keyboard');
@@ -941,6 +1012,11 @@ export default function App() {
           setIsVaultOpen(true);
           setIsStudiosSidebarOpen(false);
         }}
+        onOpenPlannedStudio={(studioName, studioDesc) => {
+          setIsGlobalAssistantOpen(true);
+          setIsStudiosSidebarOpen(false);
+          assistantService.sendMessage(`I want to explore and brainstorm ideas for the upcoming ${studioName} (${studioDesc}). What creative capabilities are planned?`);
+        }}
       />
 
       {/* 8. GLOBAL VAULT ASSETS DRAWER */}
@@ -951,6 +1027,17 @@ export default function App() {
           setCurrentDraftText(text);
           setActiveTab('keyboard');
           setIsVaultOpen(false);
+        }}
+      />
+
+      {/* 9. GLOBAL OMNIAI ASSISTANT CONVERSATION PANEL (Accessible from top-right anywhere) */}
+      <GlobalAssistantDrawer
+        isOpen={isGlobalAssistantOpen}
+        onClose={() => setIsGlobalAssistantOpen(false)}
+        currentStudioName={currentStudioFullName}
+        onNavigateToDedicatedChat={() => {
+          setActiveTab('chat');
+          setIsGlobalAssistantOpen(false);
         }}
       />
 

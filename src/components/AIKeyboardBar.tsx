@@ -378,14 +378,20 @@ export const AIKeyboardBar: React.FC<AIKeyboardBarProps> = ({
           )}
         </div>
 
-        {/* Anchored Flagship 3D WebGL Volumetric Core Orb (Far Right of Suggestion Bar) */}
-        <div 
+        {/* Screen Cognition & Instant Advice Trigger Button */}
+        <button 
           onClick={onRequestInstantAdvice}
-          className="shrink-0 pl-1.5 flex items-center justify-center border-l border-white/10"
-          title="Omni Core 3D Volumetric Core — Tap to analyze active screen"
+          className={`shrink-0 px-2.5 py-1 flex items-center gap-1 border-l border-white/10 text-xs font-mono transition-all rounded-r-lg ${
+            isAnalyzing
+              ? 'text-amber-400 bg-amber-950/30 animate-pulse'
+              : 'text-[#00f2fe] hover:text-white hover:bg-white/5'
+          }`}
+          title="Instant Screen Cognition — Tap to analyze active screen"
+          aria-label="Analyze Active Screen for Suggestions"
         >
-          <HoloOrb phase={orbPhase} size="sm" />
-        </div>
+          <Sparkles className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+          <span className="text-[10px] hidden xs:inline font-bold">Advice</span>
+        </button>
       </div>
 
       {/* 3. ACTIVE TYPING DOCK */}

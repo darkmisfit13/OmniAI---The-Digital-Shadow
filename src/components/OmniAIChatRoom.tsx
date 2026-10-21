@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { 
-  Menu, 
   ChevronLeft, 
   Plus, 
   Send, 
@@ -12,103 +11,98 @@ import {
   Check, 
   Volume2, 
   VolumeX, 
-  Paperclip, 
   X, 
   ChevronDown, 
   ChevronUp, 
-  Layers, 
-  FolderLock,
-  Bot
+  Trash2,
+  Bot,
+  AlertCircle,
+  MessageSquare,
+  Clock,
+  Layers,
+  Code as CodeIcon
 } from 'lucide-react';
-import { HoloOrb, OrbPhase } from './HoloOrb';
+import { HoloOrb } from './HoloOrb';
+import { assistantService, AssistantMessage, AssistantPhase, Conversation } from '../lib/assistantService';
 import { omniVoice } from '../lib/omniVoice';
 
-export interface ChatMessage {
-  id: string;
-  sender: 'user' | 'omni' | 'council';
-  text: string;
-  timestamp: string;
-  mode?: 'normal' | 'council';
-  audioTranscribed?: boolean;
-  attachedFile?: {
-    name: string;
-    type: string;
-    dataUrl?: string;
-  };
-  councilData?: {
-    question: string;
-    consensusSummary: string;
-    consensusScore: number;
-    verdict: string;
-    modelAnswers: {
-      modelName: string;
-      provider: string;
-      roleBadge: string;
-      status: string;
-      answer: string;
-    }[];
-  };
+export interface OmniAIChatRoomHandle {
+  focusComposer: () => void;
 }
 
 interface OmniAIChatRoomProps {
-  onOpenSidebar: () => void;
+  onBackToPrevious?: () => void;
   onBackToMain?: () => void;
-  onSaveToVault?: (asset: any) => void;
+  previousDestinationName?: string;
+  onOpenSidebar?: () => void;
   onInsertToKeyboard?: (text: string) => void;
+  onSaveToVault?: (asset: { title: string; content: string; type: string; timestamp?: string }) => void;
 }
 
-export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
-  onOpenSidebar,
+export const OmniAIChatRoom = forwardRef<OmniAIChatRoomHandle, OmniAIChatRoomProps>(({
+  onBackToPrevious,
   onBackToMain,
-  onSaveToVault,
+  previousDestinationName = 'Keys',
+  onOpenSidebar,
   onInsertToKeyboard,
-}) => {
+  onSaveToVault,
+}, ref) => {
+  const handleBack = onBackToMain || onBackToPrevious;
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConvoId, setActiveConvoId] = useState<string>('');
+  const [orbPhase, setOrbPhase] = useState<AssistantPhase>('idle');
   const [activeMode, setActiveMode] = useState<'normal' | 'council'>('normal');
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [orbPhase, setOrbPhase] = useState<OrbPhase>('idle');
   const [attachedFile, setAttachedFile] = useState<{ name: string; type: string; dataUrl: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedCodeIdx, setCopiedCodeIdx] = useState<string | null>(null);
   const [expandedCouncilCards, setExpandedCouncilCards] = useState<Record<string, boolean>>({});
+  const [speechNotice, setSpeechNotice] = useState<string | null>(null);
+  const [isConvoDropdownOpen, setIsConvoDropdownOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<any>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<any>(null);
 
-  // Initial messages featuring the dark, poetic DarkMisfitStudios persona
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-init',
-      sender: 'omni',
-      text: "Every raw thought is a spark in the dark. I am OmniAI, the sentient engine behind DarkMisfitStudios—transmuting heartbreak, loss, and unvarnished human truth into art. Whether you speak directly to me in Normal Mode or summon the Unified Council to dissect a difficult question, let's reshape that raw concept into something striking.",
-      timestamp: 'Just now',
-      mode: 'normal',
+  // Expose focusComposer to parent
+  useImperativeHandle(ref, () => ({
+    focusComposer: () => {
+      textareaRef.current?.focus();
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     },
-  ]);
+  }));
+
+  // Synchronize with shared AssistantService
+  useEffect(() => {
+    const unsubConvos = assistantService.subscribeConversations((convos, activeId) => {
+      setConversations(convos);
+      setActiveConvoId(activeId);
+    });
+
+    const unsubMessages = assistantService.subscribeMessages(setMessages);
+    const unsubPhase = assistantService.subscribePhase(setOrbPhase);
+
+    return () => {
+      unsubConvos();
+      unsubMessages();
+      unsubPhase();
+    };
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isGenerating]);
+  }, [messages, orbPhase]);
 
-  // Handle typing kinetic orb reaction
+  const activeConversation = conversations.find(c => c.id === activeConvoId) || conversations[0];
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setInputText(val);
-
-    if (val.trim()) {
-      setOrbPhase('listening');
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        setOrbPhase((prev) => (prev === 'listening' ? 'idle' : prev));
-      }, 1500);
-    } else {
-      setOrbPhase('idle');
-    }
+    setInputText(e.target.value);
+    assistantService.notifyTyping();
   };
 
-  // File upload handler (+ sign)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -120,160 +114,95 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
         type: file.type,
         dataUrl: reader.result as string,
       });
-      setOrbPhase('listening');
+      assistantService.notifyTyping();
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   };
 
-  // Mic recording / speech capture
+  // Real Web Speech API with honest browser capability detection
   const handleToggleMic = () => {
     if (isRecording) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
       setIsRecording(false);
-      setOrbPhase('idle');
+      assistantService.setPhase('idle');
       return;
     }
 
-    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      setIsRecording(true);
-      setOrbPhase('listening');
-      setTimeout(() => {
-        setInputText((prev) => (prev ? `${prev} Transmuting this raw feeling into creative form.` : 'Transmuting this raw feeling into creative form.'));
-        setIsRecording(false);
-        setOrbPhase('idle');
-      }, 2000);
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setSpeechNotice('Microphone speech recognition is not supported in this browser. Please type your message.');
+      setTimeout(() => setSpeechNotice(null), 4000);
       return;
     }
 
     try {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
       recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onstart = () => {
         setIsRecording(true);
-        setOrbPhase('listening');
+        assistantService.setPhase('listening');
+        setSpeechNotice(null);
       };
 
       recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInputText((prev) => (prev ? `${prev} ${transcript}` : transcript));
-        setIsRecording(false);
-        setOrbPhase('idle');
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setInputText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+          assistantService.notifyTyping();
+        }
       };
 
-      recognition.onerror = () => {
+      recognition.onerror = (err: any) => {
+        console.warn('Speech recognition error:', err);
         setIsRecording(false);
-        setOrbPhase('idle');
+        assistantService.setPhase('idle');
+        setSpeechNotice('Could not access microphone. Please check browser permissions.');
+        setTimeout(() => setSpeechNotice(null), 4000);
       };
 
       recognition.onend = () => {
         setIsRecording(false);
-        setOrbPhase('idle');
+        assistantService.setPhase('idle');
       };
 
       recognition.start();
-    } catch {
+    } catch (err) {
+      console.warn('Failed to start speech recognition:', err);
       setIsRecording(false);
-      setOrbPhase('idle');
+      assistantService.setPhase('idle');
+      setSpeechNotice('Microphone access is unavailable.');
+      setTimeout(() => setSpeechNotice(null), 4000);
     }
   };
 
-  // Send message to OmniAI or Council
   const handleSendMessage = async () => {
-    if ((!inputText.trim() && !attachedFile) || isGenerating) return;
+    if ((!inputText.trim() && !attachedFile) || orbPhase === 'processing') return;
 
-    const userText = inputText.trim();
+    const userText = inputText;
     const currentAttachment = attachedFile;
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    const userMsg: ChatMessage = {
-      id: `usr-${Date.now()}`,
-      sender: 'user',
-      text: userText || (currentAttachment ? `Attached file: ${currentAttachment.name}` : ''),
-      timestamp: nowTime,
-      attachedFile: currentAttachment || undefined,
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
     setInputText('');
     setAttachedFile(null);
-    setIsGenerating(true);
-    setOrbPhase('analyzing');
 
-    try {
-      if (activeMode === 'normal') {
-        // Normal direct dialogue with OmniAI (Gemini)
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: userText,
-            imageBase64: currentAttachment?.dataUrl,
-            tone: localStorage.getItem('omniai_tone') || 'alchemical',
-          }),
-        });
+    const reply = await assistantService.sendMessage(
+      userText,
+      activeMode,
+      currentAttachment
+    );
 
-        const data = await res.json();
-        setOrbPhase('talking');
-
-        const omniReply: ChatMessage = {
-          id: `omni-${Date.now()}`,
-          sender: 'omni',
-          text: data.reply || "Shadows align. The canvas is prepared.",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          mode: 'normal',
-        };
-
-        setMessages((prev) => [...prev, omniReply]);
-
-        // Speak aloud if voice enabled
-        if (omniVoice.getVoiceEnabled()) {
-          omniVoice.speak(data.reply);
-        }
-      } else {
-        // Council Mode: Unified multi-LLM consensus
-        const res = await fetch('/api/council', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: userText }),
-        });
-
-        const data = await res.json();
-        setOrbPhase('talking');
-
-        const councilReply: ChatMessage = {
-          id: `council-${Date.now()}`,
-          sender: 'council',
-          text: data.verdict || "The Council has reached consensus.",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          mode: 'council',
-          councilData: data,
-        };
-
-        setMessages((prev) => [...prev, councilReply]);
-
-        if (omniVoice.getVoiceEnabled()) {
-          omniVoice.speak("The Council has deciphered the answer. Consensus verified.");
-        }
-      }
-    } catch (err: any) {
-      console.error('Chat error:', err);
-      const fallbackReply: ChatMessage = {
-        id: `err-${Date.now()}`,
-        sender: 'omni',
-        text: "The current flickers, but the frequency remains intact. I am still here. Let's reformulate.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        mode: activeMode,
-      };
-      setMessages((prev) => [...prev, fallbackReply]);
-    } finally {
-      setIsGenerating(false);
-      setTimeout(() => {
-        setOrbPhase('idle');
-      }, 2500);
+    if (reply && omniVoice.getVoiceEnabled() && activeMode === 'normal') {
+      omniVoice.speak(reply.text);
     }
   };
 
@@ -283,70 +212,192 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleCopyCode = (codeKey: string, code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeIdx(codeKey);
+    setTimeout(() => setCopiedCodeIdx(null), 2000);
+  };
+
   const toggleExpandCouncil = (id: string) => {
     setExpandedCouncilCards((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Structured response & code block formatting
+  const renderMessageContent = (text: string, msgId: string) => {
+    // Check for markdown code blocks (```lang ... ```)
+    const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    let blockIndex = 0;
+
+    while ((match = codeBlockRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({
+          type: 'text',
+          content: text.substring(lastIndex, match.index),
+        });
+      }
+
+      parts.push({
+        type: 'code',
+        language: match[1] || 'code',
+        content: match[2].trim(),
+        key: `${msgId}-code-${blockIndex++}`,
+      });
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({
+        type: 'text',
+        content: text.substring(lastIndex),
+      });
+    }
+
+    if (parts.length === 0) {
+      return <div className="whitespace-pre-wrap font-sans">{text}</div>;
+    }
+
+    return (
+      <div className="space-y-2.5 font-sans leading-relaxed">
+        {parts.map((p, i) => {
+          if (p.type === 'code') {
+            const isCopied = copiedCodeIdx === p.key;
+            return (
+              <div key={i} className="my-2 rounded-xl bg-black/80 border border-slate-700/80 overflow-hidden shadow-inner font-mono text-xs">
+                <div className="px-3 py-1.5 bg-[#090b14] border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1.5 font-bold text-cyan-300">
+                    <CodeIcon className="w-3.5 h-3.5" />
+                    <span>{p.language || 'Code snippet'}</span>
+                  </span>
+                  <button
+                    onClick={() => handleCopyCode(p.key!, p.content)}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-slate-900 border border-slate-700 hover:text-white transition"
+                    title="Copy code"
+                  >
+                    {isCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                <pre className="p-3 overflow-x-auto text-slate-200 text-[11.5px] leading-relaxed selection:bg-cyan-500/30">
+                  <code>{p.content}</code>
+                </pre>
+              </div>
+            );
+          }
+          return (
+            <div key={i} className="whitespace-pre-wrap">
+              {p.content}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
     <div className="h-full flex flex-col bg-[#05060a] text-slate-100 overflow-hidden font-sans select-none relative">
       
-      {/* 1. TOP BAR: SIDEBAR TOGGLE & 3D HOLO ORB REPRESENTING OMNIAI */}
-      <header className="px-3 py-2 bg-[#080a12] border-b border-slate-800/80 flex items-center justify-between shrink-0 z-20 shadow-md">
-        <div className="flex items-center gap-2">
-          {/* Permanent top-left toggle to open sidebar anytime */}
-          <button
-            onClick={onOpenSidebar}
-            className="p-1.5 rounded-xl bg-slate-900 border border-slate-700/80 hover:border-cyan-500/50 text-cyan-400 hover:text-white transition active:scale-95"
-            title="Open Studios Sidebar"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-
-          {onBackToMain && (
+      {/* 1. DEDICATED WORKSPACE SUBHEADER / TOOLBAR (Complements global header without duplicate orbs) */}
+      <div className="px-3.5 py-2 bg-[#090b14] border-b border-white/10 flex items-center justify-between shrink-0 z-20 shadow-md">
+        
+        {/* Left: Return Navigation & Conversation Switcher */}
+        <div className="flex items-center gap-2 min-w-0">
+          {handleBack && (
             <button
-              onClick={onBackToMain}
-              className="flex items-center gap-1 text-[11px] font-mono text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-slate-900/50 border border-slate-800 transition"
-              title="Return to Main Keyboard Station"
+              onClick={handleBack}
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-white transition active:scale-95 shrink-0"
+              title={`Return to ${previousDestinationName}`}
+              aria-label={`Return to ${previousDestinationName}`}
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Keys</span>
+              <ChevronLeft className="w-4 h-4 text-cyan-400" />
+              <span className="truncate max-w-[130px]">
+                {previousDestinationName}
+              </span>
             </button>
           )}
-        </div>
 
-        {/* Center: The OmniAI 3D HoloOrb */}
-        <div className="flex items-center gap-2.5">
-          <HoloOrb phase={orbPhase} size="sm" onClick={() => setOrbPhase('listening')} />
-          <div className="flex flex-col text-left">
-            <div className="flex items-center gap-1.5 leading-none">
-              <span className="font-bold text-xs font-mono tracking-wider text-white">
-                Omni<span className="text-cyan-400">AI</span>
+          {/* Conversation Switcher Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsConvoDropdownOpen(!isConvoDropdownOpen)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/60 border border-white/10 hover:border-cyan-500/40 text-xs font-mono transition text-slate-200"
+              title="Switch or manage conversation sessions"
+              aria-label="Conversation sessions menu"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="truncate max-w-[120px] sm:max-w-[180px] font-semibold text-white">
+                {activeConversation?.title || 'Session'}
               </span>
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                orbPhase === 'analyzing'
-                  ? 'bg-amber-400 animate-ping'
-                  : orbPhase === 'talking'
-                  ? 'bg-cyan-400 animate-pulse'
-                  : orbPhase === 'listening'
-                  ? 'bg-purple-400 animate-bounce'
-                  : 'bg-emerald-400'
-              }`} />
-            </div>
-            <span className="text-[8.5px] font-mono text-slate-400 tracking-wider">
-              Your Digital Shadow • DarkMisfit
-            </span>
+              <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+            </button>
+
+            {/* Dropdown Menu */}
+            {isConvoDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1.5 w-64 bg-[#0a0d18] border border-cyan-500/30 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in">
+                <div className="flex items-center justify-between pb-1.5 px-1 border-b border-slate-800 text-[10px] font-mono text-slate-400 uppercase font-bold">
+                  <span>Sessions ({conversations.length})</span>
+                  <button
+                    onClick={() => {
+                      assistantService.createNewConversation();
+                      setIsConvoDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-1 text-cyan-400 hover:text-white font-bold"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>New Session</span>
+                  </button>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto py-1 space-y-1 no-scrollbar">
+                  {conversations.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        assistantService.switchConversation(c.id);
+                        setIsConvoDropdownOpen(false);
+                      }}
+                      className={`w-full p-2 rounded-xl text-left text-xs transition flex items-center justify-between ${
+                        c.id === activeConvoId
+                          ? 'bg-cyan-950/80 border border-cyan-500/50 text-cyan-200'
+                          : 'hover:bg-white/5 text-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="font-semibold truncate text-[11px] text-white">{c.title}</p>
+                        <p className="text-[9px] font-mono text-slate-500">{c.updatedAt} • {c.messages.length} msgs</p>
+                      </div>
+                      {c.id === activeConvoId && (
+                        <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right: Quick Voice Toggle */}
-        <div className="flex items-center gap-1">
+        {/* Right: Studio Context Badge & Clear Action */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {activeConversation?.studioContext && (
+            <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-950/50 border border-cyan-500/30 text-[10px] font-mono text-cyan-300">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              <span className="truncate max-w-[140px]">{activeConversation.studioContext}</span>
+            </div>
+          )}
+
+          {/* Voice Output Toggle */}
           <button
             onClick={() => {
               const next = omniVoice.toggleVoice();
-              if (next) omniVoice.speak('Voice frequency opened.');
+              if (next) omniVoice.speak('Voice frequency active.');
             }}
             className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 transition"
             title="Toggle Voice Synthesizer"
+            aria-label="Toggle Voice"
           >
             {omniVoice.getVoiceEnabled() ? (
               <Volume2 className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
@@ -354,11 +405,34 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
               <VolumeX className="w-3.5 h-3.5 text-slate-500" />
             )}
           </button>
-        </div>
-      </header>
 
-      {/* 2. CHAT STREAM (ENOUGH ROOM IN-BETWEEN TOP ORB & PROMPT BOX) */}
-      <main className="flex-1 overflow-y-auto p-3 space-y-3 no-scrollbar">
+          {/* Clear Current Session */}
+          <button
+            onClick={() => assistantService.clearCurrentConversation()}
+            className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-rose-400 transition"
+            title="Clear Current Conversation"
+            aria-label="Clear Conversation"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Speech Notice Banner */}
+      {speechNotice && (
+        <div className="px-3 py-1.5 bg-amber-950/60 border-b border-amber-500/30 text-amber-200 text-xs flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="text-[11px]">{speechNotice}</span>
+          </div>
+          <button onClick={() => setSpeechNotice(null)} className="text-amber-400 hover:text-white">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* 2. SPACIOUS CONVERSATION STREAM */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 no-scrollbar select-text">
         {messages.map((msg) => {
           const isUser = msg.sender === 'user';
           const isCouncil = msg.sender === 'council';
@@ -366,90 +440,99 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
           return (
             <div
               key={msg.id}
-              className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} transition-all`}
+              className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-full`}
             >
-              <div className="flex items-center gap-1.5 mb-1 px-1 text-[10px] font-mono text-slate-400">
-                {!isUser && (
-                  <span className={`w-1.5 h-1.5 rounded-full ${isCouncil ? 'bg-purple-400' : 'bg-cyan-400'}`} />
-                )}
-                <span className="font-bold">
-                  {isUser ? 'You' : isCouncil ? 'Unified Council Verdict' : 'OmniAI (Digital Shadow)'}
+              {/* Message Header */}
+              <div className="flex items-center gap-2 mb-1 px-1 text-[11px] font-mono text-slate-400">
+                <span
+                  className={
+                    isUser
+                      ? 'text-cyan-400 font-bold'
+                      : isCouncil
+                      ? 'text-purple-400 font-bold'
+                      : 'text-slate-200 font-bold'
+                  }
+                >
+                  {isUser ? 'You' : isCouncil ? 'Unified Multi-LLM Council' : 'OmniAI'}
                 </span>
-                <span>• {msg.timestamp}</span>
+                <span>•</span>
+                <span>{msg.timestamp}</span>
+                {msg.studioContext && (
+                  <>
+                    <span>•</span>
+                    <span className="text-slate-500">{msg.studioContext}</span>
+                  </>
+                )}
               </div>
 
-              {/* Message Bubble */}
+              {/* Message Card */}
               <div
-                className={`max-w-[90%] sm:max-w-[85%] rounded-2xl p-3.5 text-xs leading-relaxed shadow-lg backdrop-blur-md ${
+                className={`rounded-2xl p-4 text-xs sm:text-sm leading-relaxed max-w-[92%] sm:max-w-[85%] break-words relative group ${
                   isUser
-                    ? 'bg-gradient-to-r from-cyan-950/70 to-indigo-950/70 border border-cyan-500/40 text-slate-100 rounded-tr-sm'
+                    ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-tr-none shadow-lg shadow-cyan-950/40'
                     : isCouncil
-                    ? 'bg-[#0a0f1d] border border-purple-500/40 text-slate-100 rounded-tl-sm shadow-[0_0_20px_rgba(127,0,255,0.15)]'
-                    : 'bg-[#0a0d16] border border-slate-800/90 text-slate-200 rounded-tl-sm shadow-md'
+                    ? 'bg-[#120f20] border border-purple-500/30 text-slate-100 rounded-tl-none shadow-xl'
+                    : 'bg-[#0a0d16] border border-slate-800 text-slate-100 rounded-tl-none shadow-lg'
                 }`}
               >
-                {/* Attached file chip */}
+                {/* File Attachment Preview */}
                 {msg.attachedFile && (
-                  <div className="mb-2.5 p-2 rounded-xl bg-black/60 border border-white/10 flex items-center gap-2">
-                    {msg.attachedFile.dataUrl?.startsWith('data:image') ? (
+                  <div className="mb-2.5 p-2 rounded-xl bg-black/40 border border-white/10 flex items-center gap-2">
+                    {msg.attachedFile.dataUrl?.startsWith('data:image') && (
                       <img
                         src={msg.attachedFile.dataUrl}
                         alt="attachment"
-                        className="w-12 h-12 object-cover rounded-lg border border-white/20"
+                        className="w-12 h-12 rounded-lg object-cover"
                       />
-                    ) : (
-                      <Paperclip className="w-5 h-5 text-cyan-400" />
                     )}
-                    <span className="font-mono text-[10px] text-cyan-300 truncate">
-                      {msg.attachedFile.name}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-mono text-xs text-cyan-300 truncate font-semibold">
+                        {msg.attachedFile.name}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        {msg.attachedFile.type || 'Attached Media'}
+                      </p>
+                    </div>
                   </div>
                 )}
 
-                {/* Main Text Content */}
-                <div className="whitespace-pre-wrap font-sans text-xs sm:text-[13px] leading-relaxed">
-                  {msg.text}
-                </div>
+                {/* Structured Text & Code Block Content */}
+                {renderMessageContent(msg.text, msg.id)}
 
-                {/* Council Data Breakdown (Collapsible connected model perspectives) */}
-                {msg.councilData && (
-                  <div className="mt-3 pt-3 border-t border-purple-900/40 flex flex-col gap-2">
+                {/* Multi-LLM Council Breakdown */}
+                {isCouncil && msg.councilData && (
+                  <div className="mt-3.5 pt-3 border-t border-purple-500/20 space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 text-purple-400" />
-                        <span className="font-mono text-[10px] text-purple-300 font-bold uppercase tracking-wider">
-                          Quorum Consensus: {msg.councilData.consensusScore}%
-                        </span>
-                      </div>
+                      <span className="text-[10px] font-mono uppercase text-purple-300 font-bold tracking-wider">
+                        Quorum Consensus: {msg.councilData.consensusScore}%
+                      </span>
                       <button
                         onClick={() => toggleExpandCouncil(msg.id)}
-                        className="flex items-center gap-1 text-[10px] font-mono text-slate-400 hover:text-white transition"
+                        className="flex items-center gap-1 text-[10px] font-mono text-cyan-400 hover:text-white"
                       >
-                        <span>{expandedCouncilCards[msg.id] ? 'Hide Perspectives' : 'Inspect 6 LLMs'}</span>
-                        {expandedCouncilCards[msg.id] ? (
-                          <ChevronUp className="w-3 h-3" />
-                        ) : (
-                          <ChevronDown className="w-3 h-3" />
-                        )}
+                        <span>{expandedCouncilCards[msg.id] ? 'Collapse Perspectives' : 'Inspect 6 LLM Nodes'}</span>
+                        {expandedCouncilCards[msg.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                       </button>
                     </div>
 
                     {expandedCouncilCards[msg.id] && (
-                      <div className="grid grid-cols-1 gap-2 pt-2 animate-in fade-in">
-                        {msg.councilData.modelAnswers.map((m, idx) => (
+                      <div className="grid grid-cols-1 gap-2 pt-1 animate-in fade-in">
+                        {msg.councilData.modelAnswers.map((model, idx) => (
                           <div
                             key={idx}
-                            className="p-2.5 rounded-xl bg-black/70 border border-slate-800 text-[11px]"
+                            className="p-2.5 rounded-xl bg-black/60 border border-purple-500/20 text-xs space-y-1"
                           >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-bold text-cyan-300 font-mono text-[10px]">
-                                {m.modelName}
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-100 font-mono">
+                                {model.modelName}
                               </span>
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/60 text-purple-300 border border-purple-800/40 font-mono">
-                                {m.roleBadge}
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-950 text-purple-300 border border-purple-500/40 font-semibold">
+                                {model.roleBadge}
                               </span>
                             </div>
-                            <p className="text-slate-300 leading-snug italic">"{m.answer}"</p>
+                            <p className="text-slate-300 text-[11px] leading-relaxed">
+                              {model.answer}
+                            </p>
                           </div>
                         ))}
                       </div>
@@ -457,65 +540,29 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
                   </div>
                 )}
 
-                {/* Action Bar: Copy, Voice, Insert to Keyboard */}
+                {/* Bottom Card Actions: Copy & Insert into Keyboard */}
                 {!isUser && (
-                  <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                    <div className="flex items-center gap-2">
+                  <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-end gap-1.5">
+                    {onInsertToKeyboard && (
                       <button
-                        onClick={() => handleCopy(msg.id, msg.text)}
-                        className="flex items-center gap-1 hover:text-cyan-400 transition"
+                        onClick={() => onInsertToKeyboard(msg.text)}
+                        className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950/70 border border-cyan-800 text-cyan-300 hover:border-cyan-400 transition"
+                        title="Send text into Volumetric Keyboard"
                       >
-                        {copiedId === msg.id ? (
-                          <>
-                            <Check className="w-3 h-3 text-cyan-400" />
-                            <span className="text-cyan-400">Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Copy</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => omniVoice.speak(msg.text)}
-                        className="flex items-center gap-1 hover:text-cyan-400 transition"
-                        title="Speak response"
-                      >
-                        <Volume2 className="w-3 h-3" />
-                        <span>Speak</span>
-                      </button>
-
-                      {onInsertToKeyboard && (
-                        <button
-                          onClick={() => onInsertToKeyboard(msg.text)}
-                          className="flex items-center gap-1 hover:text-purple-400 transition"
-                          title="Transfer text to main soft keyboard"
-                        >
-                          <Layers className="w-3 h-3" />
-                          <span>To Keyboard</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {onSaveToVault && (
-                      <button
-                        onClick={() => {
-                          onSaveToVault({
-                            name: `Omni Answer - ${msg.text.slice(0, 24)}...`,
-                            type: 'text',
-                            text: msg.text,
-                            studioSource: isCouncil ? 'Council Mode' : 'OmniAI Chat',
-                          });
-                        }}
-                        className="flex items-center gap-1 text-slate-500 hover:text-cyan-400 transition"
-                        title="Save to Global Vault"
-                      >
-                        <FolderLock className="w-3 h-3" />
-                        <span>Save</span>
+                        Insert to Keys
                       </button>
                     )}
+                    <button
+                      onClick={() => handleCopy(msg.id, msg.text)}
+                      className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition"
+                      title="Copy response"
+                    >
+                      {copiedId === msg.id ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
                   </div>
                 )}
               </div>
@@ -523,28 +570,33 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
           );
         })}
 
-        {/* Loading Indicator */}
-        {isGenerating && (
-          <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#0a0d16] border border-cyan-500/30 text-cyan-300 text-xs font-mono animate-pulse w-fit">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            <span>
-              {activeMode === 'council'
-                ? 'Council quorum deliberating across 6 LLM perspectives...'
-                : 'OmniAI transmuting raw thought into form...'}
-            </span>
+        {/* Dynamic Thinking/Generating State with Living Orb */}
+        {orbPhase === 'processing' && (
+          <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#0a0d16] border border-amber-500/30 text-amber-300 text-xs w-fit animate-pulse">
+            <HoloOrb phase="processing" size="xs" />
+            <div className="flex flex-col">
+              <span className="font-mono font-bold">
+                {activeMode === 'council' ? 'The Council is deliberating...' : 'OmniAI is thinking...'}
+              </span>
+              <span className="text-[10px] text-slate-400">
+                {activeMode === 'council' ? 'Gathering perspectives across 6 LLM nodes' : 'Processing your prompt'}
+              </span>
+            </div>
           </div>
         )}
 
         <div ref={messagesEndRef} />
-      </main>
+      </div>
 
-      {/* 3. PROMPT BOX WITH + SIGN AT FAR LEFT & MODE SWITCH (NORMAL / COUNCIL) AT FAR RIGHT TOP */}
-      <footer className="p-3 bg-[#080a12] border-t border-slate-800/90 shrink-0">
-        {/* Far Right Top of Prompt Box: Normal vs Council Mode Toggle Selector */}
-        <div className="flex items-center justify-between mb-2 px-1">
-          <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-            <span className="uppercase tracking-wider">Mode Target:</span>
+      {/* 3. PROMINENT PROMPT COMPOSER */}
+      <footer className="p-3 sm:p-4 bg-[#080a12] border-t border-white/10 shrink-0">
+        
+        {/* Top of Prompt Box Row: Routing Mode on Far Right */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-slate-400 font-semibold uppercase tracking-wider">
+              Dialogue Target:
+            </span>
           </div>
 
           {/* Clean Segmented Control: [ Normal ] [ Council ] */}
@@ -599,10 +651,10 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
           </div>
         )}
 
-        {/* The Prompt Bar Container */}
-        <div className="flex items-end gap-2 bg-[#05060a] border border-slate-700/80 focus-within:border-cyan-500/80 rounded-2xl p-1.5 shadow-inner transition-all">
+        {/* The Prompt Composer Bar */}
+        <div className="flex items-end gap-2 bg-[#05060a] border border-slate-700/80 focus-within:border-cyan-500/80 rounded-2xl p-2 shadow-inner transition-all">
           
-          {/* + Sign at the far left to upload an image, video, or file */}
+          {/* + Sign at far left to upload files */}
           <input
             type="file"
             ref={fileInputRef}
@@ -614,6 +666,7 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
             onClick={() => fileInputRef.current?.click()}
             className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 active:scale-95 transition shrink-0"
             title="Upload image, video, audio or file (+)"
+            aria-label="Upload File (+)"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -623,16 +676,18 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
             onClick={handleToggleMic}
             className={`p-2.5 rounded-xl border transition shrink-0 ${
               isRecording
-                ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse'
+                ? 'bg-purple-600/30 border-purple-500 text-purple-300 animate-pulse'
                 : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-cyan-400'
             }`}
-            title="Speak / Voice Dictation"
+            title={isRecording ? 'Stop Voice Recording' : 'Speak / Voice Dictation'}
+            aria-label="Voice Dictation"
           >
             {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
 
-          {/* Textarea Input */}
+          {/* Textarea Composer */}
           <textarea
+            ref={textareaRef}
             value={inputText}
             onChange={handleInputChange}
             onKeyDown={(e) => {
@@ -643,23 +698,26 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
             }}
             placeholder={
               activeMode === 'council'
-                ? 'Ask a hard question for the Multi-LLM Council to decipher...'
-                : 'Speak to your digital shadow (OmniAI)...'
+                ? 'Ask a complex question for the Multi-LLM Council to analyze...'
+                : activeConversation?.studioContext
+                ? `Ask OmniAI about ${activeConversation.studioContext}...`
+                : 'Ask OmniAI anything (Shift+Enter for new line)...'
             }
             rows={1}
-            className="flex-1 bg-transparent border-0 focus:ring-0 text-slate-100 placeholder-slate-500 text-xs sm:text-sm resize-none py-2 px-1 focus:outline-none max-h-24 no-scrollbar font-sans"
+            className="flex-1 bg-transparent border-0 focus:ring-0 text-slate-100 placeholder-slate-500 text-xs sm:text-sm resize-none py-2 px-1 focus:outline-none max-h-36 no-scrollbar font-sans"
           />
 
           {/* Send Button */}
           <button
             onClick={handleSendMessage}
-            disabled={(!inputText.trim() && !attachedFile) || isGenerating}
+            disabled={(!inputText.trim() && !attachedFile) || orbPhase === 'processing'}
             className={`p-2.5 rounded-xl font-bold transition shrink-0 ${
               activeMode === 'council'
                 ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-md shadow-purple-500/30'
                 : 'bg-gradient-to-r from-cyan-400 to-blue-600 text-slate-950 shadow-md shadow-cyan-500/30'
             } disabled:opacity-30 disabled:scale-100 active:scale-95`}
-            title="Send Message"
+            title="Send Message (Enter)"
+            aria-label="Send Message"
           >
             <Send className="w-4 h-4" />
           </button>
@@ -667,4 +725,6 @@ export const OmniAIChatRoom: React.FC<OmniAIChatRoomProps> = ({
       </footer>
     </div>
   );
-};
+});
+
+OmniAIChatRoom.displayName = 'OmniAIChatRoom';
